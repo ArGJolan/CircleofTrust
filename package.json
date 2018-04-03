@@ -1,0 +1,19 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "scrapper": "node scrapper/index.js",
+    "unlocker": "node unlocker/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "mongodb": "^2.2.32",
+    "snoowrap": "^1.15.2"
+  },
+  "devDependencies": {
+    "nodemon": "^1.12.1"
+  }
+}
