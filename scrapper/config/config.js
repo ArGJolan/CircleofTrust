@@ -10,5 +10,9 @@ module.exports = {
     username: '',
     password: '',
     user_agent: ''
+  },
+  voterReddit: {
+    username: '',
+    password: ''
   }
 }
