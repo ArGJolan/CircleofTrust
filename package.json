@@ -1,18 +1,18 @@
 {
   "name": "api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "scrapper": "node scrapper/index.js",
-    "unlocker": "node unlocker/index.js"
+    "auth": "node auth/index.js",
+    "scraper": "node scraper/index.js",
+    "beggar": "node beggar/index.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "chromeless": "^1.2.0",
     "mongodb": "^2.2.32",
-    "request-promise": "^4.2.2",
     "snoowrap": "^1.15.2"
   },
   "devDependencies": {
