@@ -154,41 +154,46 @@ async function unlock (user, code) { /// Probably way to many checks
   }
 }
 
+async function scrapFromComments (comments) {
+  let count = 0
+  for (let id in comments) {
+    const comment = comments[id]
+    const text = comment.body
+    const user = comment.author.name || comment.author // TODO: fix author === undefined ??
+    const passwords = getPasswords(text)
+    if (passwords.length && !config.userBlacklist.includes(user)) {
+      let displayed = false
+      for (let passId in passwords) {
+        const word = passwords[passId]
+        const res = await mongo.find(config.mongo.trialsCollection, { filter: { user, word } })
+        if (!res.length) {
+          if (!displayed) {
+            verboseLog('►\tTrying to join', user, passwords.length, 'passwords found', '(' + (+id + 1) + '/' + comments.length + ')')
+            displayed = true
+          }
+          const result = await unlock(user, word)
+          await mongo.insertOne(config.mongo.trialsCollection, { user, word })
+          if (result) {
+            await mongo.insertOne(config.mongo.accountsCollection, { user, word })
+          }
+        }
+      }
+      count += passwords.length
+    }
+  }
+  return count
+}
+
 async function scrap () {
   await mongo.run()
 
   while (1) {
-    let count = 0
     try {
       const newComments = await fetcher.getNewComments('CircleofTrust', { limit: 100 })
       const inboxMessages = await voter.getInbox()
-      const comments = [...newComments, ...inboxMessages]
 
-      for (let id in comments) {
-        const comment = comments[id]
-        const text = comment.body
-        const user = comment.author.name || comment.author // TODO: fix author === undefined ??
-        const passwords = getPasswords(text)
-        if (passwords.length && !config.userBlacklist.includes(user)) {
-          let displayed = false
-          for (let passId in passwords) {
-            const word = passwords[passId]
-            const res = await mongo.find(config.mongo.trialsCollection, { filter: { user, word } })
-            if (!res.length) {
-              if (!displayed) {
-                verboseLog('►\tTrying to join', user, passwords.length, 'passwords found', '(' + (+id + 1) + '/' + comments.length + ')')
-                displayed = true
-              }
-              const result = await unlock(user, word)
-              await mongo.insertOne(config.mongo.trialsCollection, { user, word })
-                if (result) {
-                await mongo.insertOne(config.mongo.accountsCollection, { user, word })
-              }
-            }
-          }
-          count += passwords.length
-        }
-      }
+      const count = await scrapFromComments([...newComments, ...inboxMessages])
+
       if (!count) {
         verboseLog('No key found, waiting for a bit')
         await sleep(10000)
@@ -204,6 +209,13 @@ async function scrap () {
 
   }
 }
+
+// You can import messages directly from a file
+
+// const imported = require('../assets/users.js')
+// scrapFromComments(imported).catch(err => {
+//   console.error(err)
+// })
 
 scrap().catch(err => {
   console.error(err)

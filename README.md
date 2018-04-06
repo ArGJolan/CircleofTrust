@@ -6,7 +6,7 @@
 
 ## Prerequisites
 
-- Having chrome installed
+- Google Chrome
 - npm
 - NodeJS
 - Mongo server
@@ -17,7 +17,7 @@
 
 `npm install`
 
-### Auth in chromeless
+### Auth in chromeless (required to run beggar or scraper)
 
 `npm run auth`
 
