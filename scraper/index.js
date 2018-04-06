@@ -45,8 +45,8 @@ function getPasswords (string) {
     const result = string.match(rule.rule)
     if (result && result[rule.pos] && !results.includes(result[rule.pos])) {
       results.push(result[rule.pos])
-      const c = (result[rule.pos])[result[rule.pos].length]
-      if (['.', '!', '?'].includes(c)) {
+      const c = (result[rule.pos])[result[rule.pos].length - 1]
+      if (['.', '!', '?', ',', ':'].includes(c)) {
         results.push(result[rule.pos].slice(0, -1))
       }
     }
@@ -54,15 +54,20 @@ function getPasswords (string) {
 
   const words = string.replace(/\n/g, ' ').split(' ')
   if (words.length === 1) {
-    return [string]
+    results.push(string)
+    const c = (string)[string.length - 1]
+    if (['.', '!', '?', ',', ':'].includes(c)) {
+      results.push(string.slice(0, -1))
+    }
+    return results
   }
 
   words.forEach(word => {
     config.wordRules.forEach(rule => {
       if (word.match(rule) && !results.includes(word) && !config.wordBlacklist.includes(word)) {
         results.push(word)
-        const c = (word)[word.length]
-        if (['.', '!', '?'].includes(c)) {
+        const c = (word)[word.length - 1]
+        if (['.', '!', '?', ',', ':'].includes(c)) {
           results.push(word.slice(0, -1))
         }
       }
@@ -97,8 +102,8 @@ async function unlock (user, code) { /// Probably way to many checks
 
   const stillAlive = await chromeless.exists('#betrayed.hidden')
   if (!stillAlive) {
-    verboseLog('\x1b[31m-\t\x1b[0m', user + '\'s circle has been betrayed')
-    return false
+    verboseLog('\x1b[31m-\t\x1b[0m' + user + '\'s circle has been betrayed')
+    return undefined
   }
 
   const notJoined = await chromeless.exists('#copy-password.hidden')
@@ -154,31 +159,56 @@ async function unlock (user, code) { /// Probably way to many checks
   }
 }
 
-async function scrapFromComments (comments) {
+async function scrapFromComments (comments, extraVerbose) {
   let count = 0
+  let lastProgress = -1
   for (let id in comments) {
+    if (extraVerbose) {
+      const currentProgress = Math.round(100 * id / comments.length)
+      if (lastProgress !== currentProgress) {
+        verboseLog('\x1b[36m↻\t\x1b[0m', currentProgress + '%')
+        lastProgress = currentProgress
+      }
+    }
     const comment = comments[id]
-    const text = comment.body
-    const user = comment.author.name || comment.author // TODO: fix author === undefined ??
+    const text = comment.body || comment.text
+    const user = comment.author ? comment.author.name || comment.author : comment.user
+    const parent_id = comment.parent_id
+    const name = comment.name
+    const comment_id = comment.id
+    const link_id = comment.link_id
+    try {
+      const dbMsg = await mongo.find(config.mongo.messagesCollection, { filter: { text, user }})
+      if (!dbMsg.length && !config.userBlacklist.includes(user)) {
+        await mongo.insertOne(config.mongo.messagesCollection, { text, user, parent_id, name, comment_id, link_id })
+      }
+    } catch (err) {
+      console.error(err)
+    }
     const passwords = getPasswords(text)
     if (passwords.length && !config.userBlacklist.includes(user)) {
       let displayed = false
       for (let passId in passwords) {
         const word = passwords[passId]
         const res = await mongo.find(config.mongo.trialsCollection, { filter: { user, word } })
-        if (!res.length) {
+        const res2 = await mongo.find(config.mongo.accountsCollection, { filter: { user } })
+        const res3 = await mongo.find(config.mongo.betrayedCollection, { filter: { user } })
+        if (!res.length && !res2.length && !res3.length) {
           if (!displayed) {
             verboseLog('►\tTrying to join', user, passwords.length, 'passwords found', '(' + (+id + 1) + '/' + comments.length + ')')
             displayed = true
           }
           const result = await unlock(user, word)
           await mongo.insertOne(config.mongo.trialsCollection, { user, word })
+          if (result === undefined) {
+            await mongo.insertOne(config.mongo.betrayedCollection, { user })
+          }
           if (result) {
             await mongo.insertOne(config.mongo.accountsCollection, { user, word })
           }
+          count += passwords.length
         }
       }
-      count += passwords.length
     }
   }
   return count
@@ -188,25 +218,26 @@ async function scrap () {
   await mongo.run()
 
   while (1) {
+    const d1 = Date.now()
     try {
-      const newComments = await fetcher.getNewComments('CircleofTrust', { limit: 100 })
+      verboseLog('\x1b[36m◄◄◄\t\x1b[0mGetting new batch...')
+      const newComments = await fetcher.getNewComments('CircleofTrust', { limit: 1000 })
       const inboxMessages = await voter.getInbox()
 
       const count = await scrapFromComments([...newComments, ...inboxMessages])
 
-      if (!count) {
-        verboseLog('No key found, waiting for a bit')
-        await sleep(10000)
-      }
+      verboseLog('\x1b[36m►►►\t\x1b[0mLast batch ratio', Math.round((count / (newComments.length + inboxMessages.length)) * 10000) / 100, '%')
+      const d2 = Date.now()
+      await sleep(Math.max(180000 - (d2 - d1), 0))
     } catch (err) {
-      console.error(err.message || err)
       if (err.message && err.message.match(/403/)) {
+        console.error((err.message || err) + ' retrying in 60 seconds...')
         await sleep(60000)
       } else {
+        console.error((err.message || err) + ' retrying in 10 seconds...')
         await sleep(10000)
       }
     }
-
   }
 }
 
@@ -214,6 +245,18 @@ async function scrap () {
 
 // const imported = require('../assets/users.js')
 // scrapFromComments(imported).catch(err => {
+//   console.error(err)
+// })
+
+
+// Or from db (in case you added a new regex)
+
+// mongo.find(config.mongo.messagesCollection, {}).then(comments => {
+//   console.log('Importing', comments.length, 'messages from database')
+//   scrapFromComments(comments, true).then(count => {
+//     console.log('Done after trying', count, 'passwords')
+//   })
+// }).catch(err => {
 //   console.error(err)
 // })
 
