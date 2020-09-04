@@ -12,7 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "chromeless": "^1.2.0",
-    "mongodb": "^2.2.32",
+    "mongodb": "^3.6.1",
     "snoowrap": "^1.15.2"
   },
   "devDependencies": {
